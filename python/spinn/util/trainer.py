@@ -55,6 +55,7 @@ class ModelTrainer(object):
 
         self.standard_checkpoint_path = get_checkpoint_path(FLAGS)
         self.best_checkpoint_path = get_checkpoint_path(FLAGS, best=True)
+        self.save_all = FLAGS.save_all_ckpts
 
         # Load checkpoint if available.
         if FLAGS.load_best and os.path.isfile(self.best_checkpoint_path):
@@ -126,7 +127,11 @@ class ModelTrainer(object):
 
     def checkpoint(self):
         self.logger.Log("Checkpointing.")
-        self.save(self.standard_checkpoint_path)
+        if self.save_all:
+            self.saveall_checkpoint_path = self.standard_checkpoint_path + str(self.step)
+            self.save(self.saveall_checkpoint_path)
+        else:
+            self.save(self.standard_checkpoint_path)
 
     def save(self, filename):
         if the_gpu() >= 0:

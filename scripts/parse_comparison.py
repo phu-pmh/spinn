@@ -232,26 +232,6 @@ def corpus_stats(corpus_1, corpus_2, first_two=False, neg_pair=False):
         stats = str(stats) + '\t' + str(neg_pair_count / neg_count)
     return stats
 
-def corpus_stats_labeled(corpus_unlabeled, corpus_labeled):
-    """ 
-    Note: If a few examples in one dataset are missing from the other (i.e., some examples from the source corpus were not included 
-      in a model corpus), the shorter dataset must be supplied as corpus_1.
-    """
-
-    correct = Counter()
-    total = Counter()
-
-    for key in corpus_labeled:     
-        c1 = to_indexed_contituents(corpus_unlabeled[key])
-        c2 = to_indexed_contituents_labeled(corpus_labeled[key])
-        if len(c2) == 0:
-            continue
-
-        ex_correct, ex_total = example_labeled_acc(c1, c2)
-        correct.update(ex_correct)
-        total.update(ex_total)
-    return correct, total
-
 
 def corpus_stats_labeled(corpus_unlabeled, corpus_labeled):
     """ 
@@ -276,7 +256,7 @@ def corpus_stats_labeled(corpus_unlabeled, corpus_labeled):
 
 def to_indexed_contituents(parse):
     if parse.count("(") != parse.count(")"):
-        print parse
+        print(parse)
     parse = spaceify(parse)
     sp = parse.split()
     if len(sp) == 1:
@@ -296,27 +276,6 @@ def to_indexed_contituents(parse):
             end = word_index
             constituent = (start, end)
             indexed_constituents.add(constituent)
-        else:
-            word_index += 1
-    return indexed_constituents
-
-def to_indexed_contituents_labeled(parse):
-    sp = re.findall(r'\([^ ]+| [^\(\) ]+|\)', parse)
-    if len(sp) == 1:
-        return set([(0, 1)])
-
-    backpointers = []
-    indexed_constituents = set()
-    word_index = 0
-    for index, token in enumerate(sp):
-        if token[0] == '(':
-            backpointers.append((word_index, token[1:]))
-        elif token == ')':
-            start, typ = backpointers.pop()
-            end = word_index
-            constituent = (start, end, typ)
-            if end - start > 1:
-                indexed_constituents.add(constituent)
         else:
             word_index += 1
     return indexed_constituents
@@ -387,6 +346,14 @@ def read_sst_report(path):
             report[loaded_example['example_id'] + "_1"] = unpad(loaded_example['sent1_tree'])
     return report
 
+def read_listops_report(path):
+    report = {}
+    with codecs.open(path, encoding='utf-8') as f:
+        for line in f:
+            loaded_example = json.loads(line)
+            report[loaded_example['example_id']] = unpad(loaded_example['sent1_tree'])
+    return report
+
 def read_nli_report_padded(path):
     report = {}
     with codecs.open(path, encoding='utf-8') as f:
@@ -394,7 +361,7 @@ def read_nli_report_padded(path):
             try:
                 line = line.encode('UTF-8')
             except UnicodeError as e:
-                print "ENCODING ERROR:", line, e
+                print("ENCODING ERROR:", line, e)
                 line = "{}"
             loaded_example = json.loads(line)
             report[loaded_example['example_id'] + "_1"] = loaded_example['sent1_tree']
@@ -429,13 +396,24 @@ def unpad(parse):
     
     return sent
 
+def ConvertBinaryBracketedSeq(seq):
+    T_SHIFT = 0
+    T_REDUCE = 1
+
+    tokens, transitions = [], []
+    for item in seq:
+        if item != "(":
+            if item != ")":
+                tokens.append(item)
+            transitions.append(T_REDUCE if item == ")" else T_SHIFT)
+    return tokens, transitions
+
 
 def run():
     gt = {}
-    # gt_labeled = {} x
+    # gt_labeled = {}
     with codecs.open(FLAGS.main_data_path, encoding='utf-8') as f:
-        counter=0
-        for line in f:            
+        for example_id, line in enumerate(f):            
             if FLAGS.data_type=="nli":
                 loaded_example = json.loads(line)
                 if loaded_example["gold_label"] not in LABEL_MAP:
@@ -454,6 +432,7 @@ def run():
 
                 gt_labeled[loaded_example['pairID'] + "_1"] = loaded_example['sentence1_parse']
                 gt_labeled[loaded_example['pairID'] + "_2"] = loaded_example['sentence2_parse']
+            
             elif FLAGS.data_type=="sst":
                 line = line.strip()
                 stack=[]
@@ -468,8 +447,25 @@ def run():
                                     stack.append(newg)
                             else:
                                 stack.append(word)
-                gt[str(counter)+"_1"]=stack[0]
-                counter+=1               
+                gt[str(example_id)+"_1"]=stack[0]  
+            
+            elif FLAGS.data_type=="listops":
+                line = line.strip()
+                label, seq = line.split('\t')
+                if len(seq) <= 1:
+                    continue
+
+                tokens, transitions = ConvertBinaryBracketedSeq(
+                    seq.split(' '))
+
+                example = {}
+                example["label"] = label
+                example["sentence"] = seq
+                example["tokens"] = tokens
+                example["transitions"] = transitions
+                example["example_id"] = str(example_id)
+                gt[example["example_id"]] = example["sentence"]         
+
     lb = to_lb(gt)
     rb = to_rb(gt)
     print("GT average depth", corpus_average_depth(gt))
@@ -527,6 +523,8 @@ def run():
                 reports.append(read_nli_report(path))
             elif FLAGS.data_type=="sst":
                 reports.append(read_sst_report(path))
+            elif FLAGS.data_type=="listops":
+                reports.append(read_listops_report(path))
         if FLAGS.main_report_path_template != "_":
             ptb_report_paths = glob.glob(FLAGS.ptb_report_path_template)
             for path in ptb_report_paths:
@@ -555,7 +553,7 @@ def run():
                 print(to_latex(gt[sentence]))
                 print(to_latex(report[sentence]))
                 print()
-        print(str(corpus_stats(report, lb)) + '\t' + str(corpus_stats(report, rb)) + '\t' + str(corpus_stats(report, gt, first_two=FLAGS.first_two, neg_pair=FLAGS.neg_pair)) + '\t' + str(corpus_average_depth(report)))
+        print("Left:", str(corpus_stats(report, lb)) + '\t' + "Right:", str(corpus_stats(report, rb)) + '\t' + "Groud-truth", str(corpus_stats(report, gt, first_two=FLAGS.first_two, neg_pair=FLAGS.neg_pair)) + '\t' + "Tree depth:", str(corpus_average_depth(report)))
         
     correct = Counter()
     total = Counter()
@@ -587,7 +585,7 @@ if __name__ == '__main__':
     gflags.DEFINE_boolean("use_balanced_parses", False, "Replace all report trees with roughly-balanced binary trees. Report path template flags are not used when this is set.")
     gflags.DEFINE_boolean("first_two", False, "Show 'first two' and 'last two' metrics.")
     gflags.DEFINE_boolean("neg_pair", False, "Show 'neg_pair' metric.")
-    gflags.DEFINE_string("data_type", "nli", "Data Type")
+    gflags.DEFINE_enum("data_type", "nli", ["nli", "sst", "listops"], "Data Type")
     gflags.DEFINE_integer("print_latex", 0, "Print this many trees in LaTeX format for each report.")
 
     FLAGS(sys.argv)

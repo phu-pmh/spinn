@@ -524,6 +524,10 @@ def get_flags():
         10, 
         "The size of representation in chart-parser for choosing binary parses.")
     gflags.DEFINE_integer(
+        "cp_num", 
+        None, 
+        "The number of times to run the chart-parser at low dim.")
+    gflags.DEFINE_integer(
         "topk", 
         5, 
         "The number of parses to choose from chart-parser to use with SPINN.")
@@ -531,10 +535,16 @@ def get_flags():
         "enforce_right",
         False,
         "Use right branching trees, don't run through Chart-Parser.")
-    #gflags.DEFINE_integer(
-    #    "num_parse", 
-    #    2, 
-    #    "The number of parses to choose from chart-parser to use with SPINN.")
+
+    gflags.DEFINE_boolean(
+        "save_all_ckpts", 
+        False, 
+        "Save all checkpoints")
+
+    gflags.DEFINE_boolean(
+        "rl_skip_bad_batch", 
+        False, 
+        "Patch that skips batch when output hook fails")
 
 def flag_defaults(FLAGS, load_log_flags=False):
     if load_log_flags:
